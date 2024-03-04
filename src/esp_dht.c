@@ -22,7 +22,7 @@ esp_err_t dht_new(dht_config_t *config, dht_handle_t *handle) {
         }
         struct handle_impl *h_11 = (struct handle_impl *)(*handle);
         h_11->last_time_read = -2000000;
-
+        h_11->config = *config;
         break;
     case DHT_TYPE_22:
         break;
