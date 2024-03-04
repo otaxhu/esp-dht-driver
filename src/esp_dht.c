@@ -8,52 +8,32 @@ struct handle_impl {
     dht_config_t config;
 };
 
-struct dht22_handle {};
-
 esp_err_t dht_new(dht_config_t *config, dht_handle_t *handle) {
     if (config == NULL || handle == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
-    switch (config->type) {
-    case DHT_TYPE_11:
-        *handle = malloc(sizeof(struct handle_impl));
-        if (*handle == NULL) {
-            return ESP_ERR_NO_MEM;
-        }
-        struct handle_impl *h_11 = (struct handle_impl *)(*handle);
-        h_11->last_time_read = -2000000;
-        h_11->config = *config;
-        break;
-    case DHT_TYPE_22:
-        break;
-    default:
-        return ESP_ERR_INVALID_ARG;
+
+    *handle = malloc(sizeof(struct handle_impl));
+    if (*handle == NULL) {
+        return ESP_ERR_NO_MEM;
     }
+
+    struct handle_impl *h = (struct handle_impl *)(*handle);
+    h->config = *config;
+    h->last_time_read = -2000000;
 
     return ESP_OK;
 }
 
-esp_err_t dht_delete(dht_handle_t handle) {
-    if (handle == NULL) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    struct handle_impl *h = (struct handle_impl *)handle;
-    switch (h->config.type) {
-    case DHT_TYPE_11:
-    case DHT_TYPE_22:
-        free(h);
-        break;
-    default:
-        return ESP_ERR_INVALID_ARG;
-    }
-    return ESP_OK;
+void dht_delete(dht_handle_t handle) {
+    free(handle);
 }
 
 // Function that can be used to wait the response signal after sending the start signal and
 // get the bits data from the dht
 //
 // Returns microseconds waited succesfully or -1 if there was an error
-static inline int16_t wait_response(int gpio_pin, int16_t micro_seconds, uint8_t level) {
+static int16_t wait_response(int gpio_pin, int16_t micro_seconds, uint8_t level) {
     int16_t micros_res = 0;
     while (gpio_get_level(gpio_pin) == level) {
         if (micros_res++ > micro_seconds) {
@@ -69,9 +49,9 @@ esp_err_t dht_read(dht_handle_t handle, dht_data_t *out_data) {
         return ESP_ERR_INVALID_ARG;
     }
     int64_t temp_time = esp_timer_get_time();
-    // Waiting one second so dht can startup
-    if (temp_time < 1000000) {
-        ets_delay_us(1000000 - temp_time);
+    // Waiting two seconds so dht can startup
+    if (temp_time < 2000000) {
+        ets_delay_us(2000000 - temp_time);
         temp_time = esp_timer_get_time();
     }
     struct handle_impl *h = (struct handle_impl *)handle;
@@ -112,7 +92,7 @@ esp_err_t dht_read(dht_handle_t handle, dht_data_t *out_data) {
             return ESP_FAIL;
         }
         // Received 1 bit
-        if (bit_data <= 27) {
+        if (bit_data > 27) {
             if (i < 8) {
                 // humidity integral
                 data[0] |= (1 << (7 - i));
@@ -137,10 +117,18 @@ esp_err_t dht_read(dht_handle_t handle, dht_data_t *out_data) {
         return ESP_FAIL;
     }
 
-    out_data->humidity.integral = data[0];
-    out_data->humidity.decimal = data[1];
-    out_data->temperature.integral = data[2];
-    out_data->temperature.decimal = data[3];
+    h->last_data = (dht_data_t){
+        .humidity = {
+            .integral = data[0],
+            .decimal = data[1]
+        },
+        .temperature = {
+            .integral = data[2],
+            .decimal = data[3]
+        }
+    };
+
+    *out_data = h->last_data;
 
     return ESP_OK;
 }
